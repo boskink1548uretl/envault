@@ -51,6 +51,25 @@ def read_events(limit: int = 50) -> List[dict]:
     return events[-limit:]
 
 
+def filter_events(project: Optional[str] = None, action: Optional[str] = None, limit: int = 50) -> List[dict]:
+    """Return audit events filtered by project and/or action.
+
+    Args:
+        project: If provided, only return events matching this project name.
+        action: If provided, only return events matching this action string.
+        limit: Maximum number of matching events to return (most recent first).
+
+    Returns:
+        A list of matching audit event dicts, newest last, up to *limit* entries.
+    """
+    events = read_events(limit=None)  # type: ignore[arg-type]
+    if project is not None:
+        events = [e for e in events if e.get("project") == project]
+    if action is not None:
+        events = [e for e in events if e.get("action") == action]
+    return events[-limit:]
+
+
 def clear_audit_log() -> None:
     """Erase all audit log entries."""
     path = get_audit_log_path()
