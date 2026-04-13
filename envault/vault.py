@@ -1,53 +1,101 @@
-"""High-level vault operations: store, retrieve, list, and delete env entries."""
+"""Vault class for managing encrypted project environment variables."""
 
-from pathlib import Path
+from typing import Dict, List, Optional
 
-from envault.storage import load_vault, save_vault, vault_exists, DEFAULT_VAULT_DIR
+from envault.crypto import decrypt, encrypt
+from envault.storage import load_vault, save_vault, vault_exists
 
 
 class Vault:
-    """Manages named .env project entries inside the encrypted vault."""
+    """Manages encrypted storage of per-project environment variables."""
 
-    def __init__(self, password: str, vault_dir: Path = DEFAULT_VAULT_DIR):
-        self.password = password
-        self.vault_dir = vault_dir
-        self._data: dict = load_vault(password, vault_dir)
+    def __init__(self, password: str, vault_path: str):
+        """
+        Args:
+            password: Master password used for encryption/decryption.
+            vault_path: Path to the encrypted vault file.
+        """
+        self._password = password
+        self._vault_path = vault_path
+        if vault_exists(vault_path):
+            encrypted = load_vault(vault_path)
+            import json
+            self._data: dict = json.loads(decrypt(encrypted, password))
+        else:
+            self._data = {}
+            self._save()
 
-    def _save(self) -> None:
-        save_vault(self._data, self.password, self.vault_dir)
+    def _save(self):
+        """Serialize and encrypt vault data to disk."""
+        import json
+        encrypted = encrypt(json.dumps(self._data), self._password)
+        save_vault(self._vault_path, encrypted)
 
-    def set_project(self, project: str, env_vars: dict) -> None:
-        """Store or overwrite env vars for a project."""
-        self._data[project] = env_vars
+    def set_project(self, project: str, variables: Dict[str, str]) -> None:
+        """Store or replace all variables for a project.
+
+        Args:
+            project: Project name.
+            variables: Dict of environment variable key-value pairs.
+        """
+        self._data[project] = variables
         self._save()
 
-    def get_project(self, project: str) -> dict:
-        """Retrieve env vars for a project. Raises KeyError if not found."""
-        if project not in self._data:
-            raise KeyError(f"Project '{project}' not found in vault.")
-        return dict(self._data[project])
+    def get_project(self, project: str) -> Optional[Dict[str, str]]:
+        """Retrieve variables for a project.
+
+        Args:
+            project: Project name.
+
+        Returns:
+            Dict of variables, or empty dict if project not found.
+        """
+        return self._data.get(project, {})
+
+    def list_projects(self) -> List[str]:
+        """Return a sorted list of all project names."""
+        return sorted(self._data.keys())
 
     def delete_project(self, project: str) -> None:
-        """Delete a project entry from the vault."""
+        """Delete a project and all its variables.
+
+        Args:
+            project: Project name.
+
+        Raises:
+            KeyError: If the project does not exist.
+        """
         if project not in self._data:
-            raise KeyError(f"Project '{project}' not found in vault.")
+            raise KeyError(f"Project '{project}' not found.")
         del self._data[project]
         self._save()
 
-    def list_projects(self) -> list[str]:
-        """Return a sorted list of stored project names."""
-        return sorted(self._data.keys())
+    def set_variable(self, project: str, key: str, value: str) -> None:
+        """Set a single variable in a project.
 
-    def set_var(self, project: str, key: str, value: str) -> None:
-        """Set a single env variable within a project."""
+        Args:
+            project: Project name.
+            key: Variable name.
+            value: Variable value.
+        """
         project_data = self._data.get(project, {})
         project_data[key] = value
         self._data[project] = project_data
         self._save()
 
-    def delete_var(self, project: str, key: str) -> None:
-        """Remove a single env variable from a project."""
-        if project not in self._data or key not in self._data[project]:
+    def delete_variable(self, project: str, key: str) -> None:
+        """Remove a single variable from a project.
+
+        Args:
+            project: Project name.
+            key: Variable name.
+
+        Raises:
+            KeyError: If the project or variable does not exist.
+        """
+        if project not in self._data:
+            raise KeyError(f"Project '{project}' not found.")
+        if key not in self._data[project]:
             raise KeyError(f"Variable '{key}' not found in project '{project}'.")
         del self._data[project][key]
         self._save()
